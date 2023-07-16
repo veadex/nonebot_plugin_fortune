@@ -1,43 +1,55 @@
 import json
 import random
+import os
 from pathlib import Path
 from typing import List, Optional, Tuple
-
 from PIL import Image, ImageDraw, ImageFont
-
 from .config import fortune_config, themes_flag_config
 
 
-def get_copywriting() -> Tuple[str, str]:
-    """
-    Read the copywriting.json, choice a luck with a random content
-    """
+def get_copywriting(filename: str) -> Tuple[str, str]:
+    '''
+            Read the copywriting.json, choice a luck with a random content
+    '''
     _p: Path = fortune_config.fortune_path / "fortune" / "copywriting.json"
+    _prob:Path = fortune_config.fortune_path / "fortune" / "choice.json"     #获取单张图片的权重  
 
     with open(_p, "r", encoding="utf-8") as f:
         content = json.load(f).get("copywriting")
-        luck = random.choice(content)
+    
+    with open(_prob, "r", encoding="utf-8") as f:
+        probabilities = json.load(f)
+        probability = probabilities.get(filename)
+
+    if probability:
+        luck = random.choices(content, weights=probability, k=1)[0]
+        title: str = luck.get("good-luck")
+        text: str = random.choice(luck.get("content"))
+    else:
+        default_weights = [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 5, 4, 4, 4, 4, 4]    #修改默认的概率，增大抽到好运的概率，权重越大，概率越大
+        luck = random.choices(content, weights= default_weights ,k=1)[0]
         title: str = luck.get("good-luck")
         text: str = random.choice(luck.get("content"))
 
-        return title, text
+    return title, text
 
 
-def random_basemap(theme: str, spec_path: Optional[str] = None) -> Path:
+def random_basemap(theme: str, spec_path: Optional[str] = None) -> Tuple[Path, str]:
     if isinstance(spec_path, str):
         p: Path = fortune_config.fortune_path / "img" / spec_path
-        return p
+        filename: str = p.name
+        return p, filename
 
     if theme == "random":
         __p: Path = fortune_config.fortune_path / "img"
 
         # Each dir is a theme.
-        themes: List[str] = [
-            f.name for f in __p.iterdir() if f.is_dir() and theme_flag_check(f.name)
-        ]
+        themes: List[str] = [f.name for f in __p.iterdir(
+        ) if f.is_dir() and theme_flag_check(f.name)]
         picked: str = random.choice(themes)
 
         _p: Path = __p / picked
+        filename: str = _p.name
 
         # Each file is a posix path of images directory
         images_dir: List[Path] = [i for i in _p.iterdir() if i.is_file()]
@@ -46,23 +58,28 @@ def random_basemap(theme: str, spec_path: Optional[str] = None) -> Path:
         _p: Path = fortune_config.fortune_path / "img" / theme
         images_dir: List[Path] = [i for i in _p.iterdir() if i.is_file()]
         p: Path = random.choice(images_dir)
+        filename: str = p.name
 
-    return p
+    return p, filename
 
 
 def drawing(gid: str, uid: str, theme: str, spec_path: Optional[str] = None) -> Path:
     # 1. Random choice a base image
-    imgPath: Path = random_basemap(theme, spec_path)
-    img: Image.Image = Image.open(imgPath).convert("RGB")
+    imgPath: Path
+    filename_with_extension: str
+    imgPath, filename_with_extension = random_basemap(theme, spec_path)
+    filename, _ = os.path.splitext(filename_with_extension)
+    img: Image.Image = Image.open(imgPath)
     draw = ImageDraw.Draw(img)
 
     # 2. Random choice a luck text with title
-    title, text = get_copywriting()
+    title, text = get_copywriting(filename)
 
     # 3. Draw
-    font_size = 45
+    font_size = 40
     color = "#F5F5F5"
-    image_font_center = [140, 99]
+    #color = "#323232"
+    image_font_center = [140, 99] #140  99
     fontPath = {
         "title": f"{fortune_config.fortune_path}/font/Mamelon.otf",
         "text": f"{fortune_config.fortune_path}/font/sakura.ttf",
@@ -80,9 +97,9 @@ def drawing(gid: str, uid: str, theme: str, spec_path: Optional[str] = None) -> 
     )
 
     # Text rendering
-    font_size = 25
+    font_size = 20
     color = "#323232"
-    image_font_center = [140, 297]
+    image_font_center = [140, 297] #140 297
     ttfront = ImageFont.truetype(fontPath["text"], font_size)
     slices, result = decrement(text)
 
@@ -110,10 +127,10 @@ def drawing(gid: str, uid: str, theme: str, spec_path: Optional[str] = None) -> 
 
 
 def decrement(text: str) -> Tuple[int, List[str]]:
-    """
-    Split the text, return the number of columns and text list
-    TODO: Now, it ONLY fit with 2 columns of text
-    """
+    '''
+            Split the text, return the number of columns and text list
+            TODO: Now, it ONLY fit with 2 columns of text
+    '''
     length: int = len(text)
     result: List[str] = []
     cardinality = 9
@@ -133,29 +150,23 @@ def decrement(text: str) -> Tuple[int, List[str]]:
         if length % 2 == 0:
             # even
             fillIn = space * int(9 - length / 2)
-            return col_num, [
-                text[: int(length / 2)] + fillIn,
-                fillIn + text[int(length / 2) :],
-            ]
+            return col_num, [text[: int(length / 2)] + fillIn, fillIn + text[int(length / 2):]]
         else:
             # odd number
             fillIn = space * int(9 - (length + 1) / 2)
-            return col_num, [
-                text[: int((length + 1) / 2)] + fillIn,
-                fillIn + space + text[int((length + 1) / 2) :],
-            ]
+            return col_num, [text[: int((length + 1) / 2)] + fillIn, fillIn + space + text[int((length + 1) / 2):]]
 
     for i in range(col_num):
         if i == col_num - 1 or col_num == 1:
-            result.append(text[i * cardinality :])
+            result.append(text[i * cardinality:])
         else:
-            result.append(text[i * cardinality : (i + 1) * cardinality])
+            result.append(text[i * cardinality: (i + 1) * cardinality])
 
     return col_num, result
 
 
 def theme_flag_check(theme: str) -> bool:
-    """
-    check wether a theme is enabled in themes_flag_config
-    """
+    '''
+            check wether a theme is enabled in themes_flag_config
+    '''
     return themes_flag_config.dict().get(theme + "_flag", False)
